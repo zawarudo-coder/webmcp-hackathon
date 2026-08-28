@@ -3,34 +3,41 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Security Lab Canvas — WebMCP Cybersecurity Learning</title>
-  <meta name="description" content="A WebMCP-powered cybersecurity learning canvas where humans and AI agents co-learn OWASP Top 10 concepts." />
+  <title>FinCanvas — WebMCP Analyst Co-Pilot</title>
+  <meta name="description" content="Collaborative canvas for humans + AI agents to analyze company financials. WebMCP powered." />
   <link rel="manifest" href="/manifest.json" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header>
-    <h1>Security Lab Canvas</h1>
-    <span class="tagline">A WebMCP-powered cybersecurity learning canvas for humans &amp; AI agents — OWASP Top 10 edition</span>
+    <div class="logo">
+      <span class="cube">■</span> FinCanvas
+    </div>
+    <span class="tagline">WebMCP analyst co-pilot • human + AI co-analysis of public company financials</span>
   </header>
 
   <main>
     <section class="canvas-area">
-      <svg id="canvas" width="900" height="560" xmlns="http://www.w3.org/2000/svg"></svg>
+      <svg id="canvas" width="1000" height="560" xmlns="http://www.w3.org/2000/svg"></svg>
     </section>
 
     <aside class="sidebar">
-      <h2>🔐 Security Tools</h2>
-      <p>WebMCP exposes the tools below. An AI agent can call them directly on this page.</p>
+      <h2>🔧 Tools</h2>
       <ul id="tool-list"></ul>
 
-      <h3>Console</h3>
+      <h3>💼 Companies</h3>
+      <ul id="company-list" class="company-list"></ul>
+
+      <h3>📊 Ratios</h3>
+      <ul id="ratio-list" class="ratio-list"></ul>
+
+      <h3>💬 Console</h3>
       <pre id="log"></pre>
     </aside>
   </main>
 
   <footer>
-    <small>WebMCP Challenge · Security Lab Canvas · MIT licensed · <a href="https://github.com/zawarudo-coder/webmcp-hackathon">GitHub</a></small>
+    <small>WebMCP Challenge · FinCanvas · MIT licensed · <a href="https://github.com/zawarudo-coder/webmcp-hackathon">GitHub</a></small>
   </footer>
 
   <script src="app.js"></script>

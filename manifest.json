@@ -1,10 +1,10 @@
 {
-  "name": "CollabCanvas",
-  "short_name": "CollabCanvas",
+  "name": "FinCanvas",
+  "short_name": "FinCanvas",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0d0f12",
-  "theme_color": "#1a1e23",
+  "background_color": "#020617",
+  "theme_color": "#090f19",
   "icons": [
     {
       "src": "/icon-192.png",

@@ -1,5 +1,5 @@
-// Security Lab Canvas Service Worker — offline-first + sync
-const CACHE = "securitylab-v1";
+// FinCanvas Service Worker — offline-first + sync
+const CACHE = "fincanvas-v1";
 const ASSETS = [
   "/",
   "/index.html",
@@ -19,13 +19,13 @@ self.addEventListener("fetch", (e) => {
 });
 
 self.addEventListener("sync", (e) => {
-  if (e.tag === "securitylab-sync") {
+  if (e.tag === "fincanvas-sync") {
     e.waitUntil(
       (async () => {
-        const pending = localStorage.getItem("securitylab-pending");
+        const pending = localStorage.getItem("fincanvas-pending");
         if (pending) {
           console.log("[sw] sync pending notes:", pending);
-          localStorage.removeItem("securitylab-pending");
+          localStorage.removeItem("fincanvas-pending");
         }
       })()
     );
