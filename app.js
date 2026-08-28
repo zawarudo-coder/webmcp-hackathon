@@ -1,37 +1,54 @@
-/* CollabCanvas — shared canvas for humans & AI agents (WebMCP hackathon) */
+/* Security Lab Canvas — WebMCP-powered cybersecurity learning canvas (WebMCP hackathon) */
 const collabState = {
-  version: 2,
-  notes: [],          // {id,text,x,y,owner,creator}
-  draws: [],          // {id,path,owner}
+  version: 3,
+  notes: [],          // {id,text,x,y,owner,creator,concept}
   agents: [],         // {name,description}
   identities: {},     // creatorId -> {name,style,history}
+  concepts: [],       // {id,title,vulnType,severity}  (OWASP Top 10 seed)
+  questions: [],      // {id,noteId,question,answer,askedAt,answeredAt,correct}
+  progress: {},       // creatorId -> {correct:number,total:number,weakAreas:[string]}
   nextId: 1,
   nextCreator: 1,
+  nextConcept: 1,
+  nextQ: 1,
 };
+
+/* ---- OWASP Top 10 seed concepts ---- */
+const OWASP_CONCEPTS = [
+  { title: "Broken Access Control", vulnType: "access-control", severity: "critical" },
+  { title: "Cryptographic Failures", vulnType: "crypto", severity: "high" },
+  { title: "Injection Attacks", vulnType: "injection", severity: "critical" },
+  { title: "Insecure Design", vulnType: "design", severity: "high" },
+  { title: "Security Misconfiguration", vulnType: "config", severity: "high" },
+  { title: "Vulnerable Components", vulnType: "deps", severity: "high" },
+  { title: "Authentication Failures", vulnType: "auth", severity: "high" },
+  { title: "Cross-Site Scripting (XSS)", vulnType: "xss", severity: "high" },
+  { title: "Server-Side Request Forgery", vulnType: "ssrf", severity: "high" },
+  { title: "Security Logging Failures", vulnType: "logging", severity: "medium" },
+];
 
 /* ---- Persistence + cross-tab / cross-context sync ---- */
 function loadState() {
-  const raw = localStorage.getItem("collabcanvas-state");
+  const raw = localStorage.getItem("securitylab-state");
   if (raw) Object.assign(collabState, JSON.parse(raw));
 }
 
 function saveState() {
-  localStorage.setItem("collabcanvas-state", JSON.stringify(collabState));
-  // broadcast so other tabs / the connected agent context see updates
-  const bc = new (window.BroadcastChannel || function(){return{postMessage(){}}})("collabcanvas");
+  localStorage.setItem("securitylab-state", JSON.stringify(collabState));
+  const bc = new (window.BroadcastChannel || function(){return{postMessage(){}}})("securitylab");
   bc.postMessage({ type: "state-update", state: JSON.stringify(collabState) });
-  window.dispatchEvent(new StorageEvent("storage", { key: "collabcanvas-state", newValue: JSON.stringify(collabState) }));
+  window.dispatchEvent(new StorageEvent("storage", { key: "securitylab-state", newValue: JSON.stringify(collabState) }));
 }
 
 window.addEventListener("storage", (e) => {
-  if (e.key === "collabcanvas-state" && e.newValue) {
+  if (e.key === "securitylab-state" && e.newValue) {
     Object.assign(collabState, JSON.parse(e.newValue));
     render();
   }
 });
 
 if ("BroadcastChannel" in window) {
-  const bc = new BroadcastChannel("collabcanvas");
+  const bc = new BroadcastChannel("securitylab");
   bc.onmessage = (e) => {
     if (e.data && e.data.type === "state-update") {
       Object.assign(collabState, JSON.parse(e.data.state));
@@ -51,13 +68,22 @@ function render() {
   const svg = document.getElementById("canvas");
   svg.innerHTML = "";
 
+  // seed concepts into agent cards if empty
+  if (collabState.concepts.length === 0) {
+    OWASP_CONCEPTS.forEach((c) => {
+      collabState.concepts.push({ id: String(collabState.nextConcept++), ...c });
+    });
+    collabState.agents.push({ name: "SecBot", description: "Your AI cybersecurity tutor — WebMCP powered" });
+    saveState();
+  }
+
   collabState.notes.forEach((n) => {
     const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
     const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
     rect.setAttribute("x", n.x);
     rect.setAttribute("y", n.y);
-    rect.setAttribute("width", "160");
-    rect.setAttribute("height", "60");
+    rect.setAttribute("width", "180");
+    rect.setAttribute("height", "70");
     rect.setAttribute("rx", "8");
     rect.setAttribute("class", n.owner === "human" ? "note-h" : "note-a");
     g.appendChild(rect);
@@ -66,36 +92,47 @@ function render() {
     text.setAttribute("y", n.y + 22);
     text.textContent = n.text;
     g.appendChild(text);
-    // creator tag
-    if (n.creator) {
+    if (n.concept) {
       const tag = document.createElementNS("http://www.w3.org/2000/svg", "text");
       tag.setAttribute("x", n.x + 10);
       tag.setAttribute("y", n.y + 42);
-      tag.textContent = "@" + n.creator;
+      tag.textContent = "#" + n.concept;
       tag.setAttribute("font-size", "10");
-      tag.setAttribute("fill", "#6b7280");
+      tag.setAttribute("fill", "#60a5fa");
       g.appendChild(tag);
+    }
+    if (n.creator) {
+      const creator = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      creator.setAttribute("x", n.x + 10);
+      creator.setAttribute("y", n.y + 58);
+      creator.textContent = "@" + n.creator;
+      creator.setAttribute("font-size", "10");
+      creator.setAttribute("fill", "#6b7280");
+      g.appendChild(creator);
     }
     svg.appendChild(g);
   });
 
-  // agent cards
-  collabState.agents.forEach((a, i) => {
-    const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
-    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    rect.setAttribute("x", 720);
-    rect.setAttribute("y", 60 + i * 50);
-    rect.setAttribute("width", "170");
-    rect.setAttribute("height", "42");
-    rect.setAttribute("rx", "6");
-    rect.setAttribute("class", "agent-card");
-    g.appendChild(rect);
-    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    text.setAttribute("x", 730);
-    text.setAttribute("y", 88 + i * 50);
-    text.textContent = a.name;
-    g.appendChild(text);
-    svg.appendChild(g);
+  // concept cards on the right
+  collabState.concepts.forEach((c, i) => {
+    if (i < 10) {
+      const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      rect.setAttribute("x", 740);
+      rect.setAttribute("y", 60 + i * 46);
+      rect.setAttribute("width", "150");
+      rect.setAttribute("height", "38");
+      rect.setAttribute("rx", "6");
+      rect.setAttribute("class", "concept-card");
+      g.appendChild(rect);
+      const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      text.setAttribute("x", 750);
+      text.setAttribute("y", 84 + i * 46);
+      text.textContent = c.title;
+      text.setAttribute("font-size", "10");
+      g.appendChild(text);
+      svg.appendChild(g);
+    }
   });
 }
 
@@ -103,13 +140,14 @@ function listToolsUI() {
   const ul = document.getElementById("tool-list");
   ul.innerHTML = "";
   const tools = [
-    { name: "add_note", desc: "Add a text note to the shared canvas" },
-    { name: "move_note", desc: "Move a note to a new position" },
-    { name: "list_notes", desc: "List all notes currently on the canvas" },
-    { name: "add_agent", desc: "Register a new AI agent persona" },
-    { name: "get_identity", desc: "Read a contributor's identity & style" },
-    { name: "clear_canvas", desc: "Reset the entire shared canvas" },
-    { name: "snapshot", desc: "Export canvas state + reasoning trace" },
+    { name: "add_note", desc: "Add a security concept note to the canvas" },
+    { name: "generate_question", desc: "Agent generates a quiz question on a concept" },
+    { name: "check_answer", desc: "Human answers a question; agent evaluates" },
+    { name: "explain_mistake", desc: "Agent explains why an answer was wrong" },
+    { name: "get_progress", desc: "Read mastery stats per creator" },
+    { name: "get_weak_areas", desc: "Find concepts the learner struggles with" },
+    { name: "create_flashcard_set", desc: "Batch-generate study cards for a concept" },
+    { name: "snapshot", desc: "Export canvas + reasoning trace" },
   ];
   tools.forEach((t) => {
     const li = document.createElement("li");
@@ -124,40 +162,39 @@ function ensureIdentity(name, style) {
   if (existing) return existing[0];
   const id = String(collabState.nextCreator++);
   collabState.identities[id] = { name, style: style || "neutral", history: [] };
+  collabState.progress[id] = { correct: 0, total: 0, weakAreas: [] };
   return id;
 }
 
-/* ---- WebMCP integration ----
- * Register tools that an AI agent (via WebMCP) can call from ChatGPT/Chrome.
- * This is the required snippet shape from the hackathon rules.
- */
+/* ---- WebMCP integration ---- */
 if (window.document.modelContext && typeof window.document.modelContext.registerTool === "function") {
   const mc = window.document.modelContext;
 
   /* Tool 1 — add_note */
   mc.registerTool({
     name: "add_note",
-    description: "Add a text note to the shared canvas. Creator is inferred from the agent context if not provided.",
+    description: "Add a security concept note to the shared canvas. Creator is inferred from the agent context if not provided.",
     inputSchema: {
       type: "object",
       properties: {
-        text: { type: "string", description: "The note content." },
+        text: { type: "string", description: "The note content (e.g. concept explanation)." },
         x: { type: "integer", description: "X position on canvas." },
         y: { type: "integer", description: "Y position on canvas." },
         owner: { type: "string", enum: ["human", "agent"], description: "Who is adding the note." },
         creator: { type: "string", description: "Optional creator name for identity tracking." },
-        style: { type: "string", description: "Optional style hint for creator identity." }
+        style: { type: "string", description: "Optional style hint." },
+        concept: { type: "string", description: "Optional OWASP concept tag." }
       },
       required: ["text", "x", "y", "owner"]
     },
     execute: async (input) => {
       loadState();
-      let creatorId = input.creator ? ensureIdentity(input.creator, input.style) : String(collabState.nextCreator++);
-      const note = { id: String(collabState.nextId++), text: input.text, x: input.x, y: input.y, owner: input.owner, creator: creatorId };
+      const creatorId = input.creator ? ensureIdentity(input.creator, input.style) : String(collabState.nextCreator++);
+      const note = { id: String(collabState.nextId++), text: input.text, x: input.x, y: input.y, owner: input.owner, creator: creatorId, concept: input.concept || null };
       collabState.notes.push(note);
       if (input.creator && collabState.identities[creatorId]) collabState.identities[creatorId].history.push(note.id);
       saveState();
-      log(`[tool:add_note] ${note.owner} (${note.creator}) added note #${note.id} at (${note.x},${note.y}): "${note.text}"`);
+      log(`[tool:add_note] ${note.owner} (${note.creator}) added note #${note.id}: "${note.text}"`);
       return { success: true, noteId: note.id };
     }
   });
@@ -165,152 +202,250 @@ if (window.document.modelContext && typeof window.document.modelContext.register
   /* Tool 2 — list_notes */
   mc.registerTool({
     name: "list_notes",
-    description: "Return all notes currently on the shared canvas, with identity metadata.",
+    description: "Return all notes on the canvas with identity metadata.",
     inputSchema: { type: "object", properties: {} },
     execute: async () => {
       loadState();
-      log("[tool:list_notes] returned " + collabState.notes.length + " notes");
-      return { notes: collabState.notes };
+      return { notes: collabState.notes, count: collabState.notes.length };
     }
   });
 
-  /* Tool 3 — move_note */
+  /* Tool 3 — generate_question */
   mc.registerTool({
-    name: "move_note",
-    description: "Move an existing note to a new position.",
+    name: "generate_question",
+    description: "Agent generates a quiz question about a security concept. Returns questionId for later answer check.",
     inputSchema: {
       type: "object",
-      properties: { noteId: { type: "string" }, x: { type: "integer" }, y: { type: "integer" } },
-      required: ["noteId", "x", "y"]
+      properties: {
+        concept: { type: "string", description: "The OWASP concept (e.g. 'Injection')." },
+        difficulty: { type: "string", enum: ["easy", "medium", "hard"], description: "Difficulty level." },
+        creator: { type: "string", description: "Creator name asking the question." }
+      },
+      required: ["concept", "difficulty"]
     },
     execute: async (input) => {
       loadState();
-      const n = collabState.notes.find((v) => v.id === input.noteId);
-      if (!n) return { success: false, error: "note not found" };
-      n.x = input.x; n.y = input.y;
+      const qid = String(collabState.nextQ++);
+      const q = {
+        id: qid,
+        concept: input.concept,
+        difficulty: input.difficulty,
+        question: `What is the primary risk in ${input.concept}?`,
+        answer: `The primary risk in ${input.concept} is exploitation that allows an attacker to compromise the system.`,
+        askedAt: new Date().toISOString(),
+        creator: input.creator || "agent"
+      };
+      collabState.questions.push(q);
       saveState();
-      return { success: true };
+      log(`[tool:generate_question] created Q#${qid} on "${input.concept}" (${input.difficulty})`);
+      return { success: true, questionId: qid, question: q.question };
     }
   });
 
-  /* Tool 4 — add_agent */
+  /* Tool 4 — check_answer */
   mc.registerTool({
-    name: "add_agent",
-    description: "Register a new AI agent persona so humans can see which agents are collaborating.",
+    name: "check_answer",
+    description: "Human submits an answer to a generated question; agent evaluates correctness.",
     inputSchema: {
       type: "object",
-      properties: { name: { type: "string" }, description: { type: "string" } },
-      required: ["name", "description"]
+      properties: {
+        questionId: { type: "string" },
+        answer: { type: "string" },
+        creator: { type: "string", description: "Who is answering." }
+      },
+      required: ["questionId", "answer"]
     },
     execute: async (input) => {
       loadState();
-      collabState.agents.push({ name: input.name, description: input.description });
+      const q = collabState.questions.find((v) => v.id === input.questionId);
+      if (!q) return { success: false, error: "question not found" };
+      const answerLower = input.answer.toLowerCase();
+      const answerKeyLower = q.answer.toLowerCase();
+      // simple keyword overlap for correctness
+      const keywords = answerLower.split(/\W+/).filter((w) => w.length > 3);
+      const correct = keywords.some((k) => answerKeyLower.includes(k)) || answerLower.includes(q.concept.toLowerCase());
+      q.answeredAt = new Date().toISOString();
+      q.correct = correct;
+      q.userAnswer = input.answer;
+      const creatorId = input.creator ? ensureIdentity(input.creator) : String(collabState.nextCreator);
+      if (!collabState.progress[creatorId]) collabState.progress[creatorId] = { correct: 0, total: 0, weakAreas: [] };
+      collabState.progress[creatorId].total++;
+      if (correct) collabState.progress[creatorId].correct++;
+      else {
+        if (!collabState.progress[creatorId].weakAreas.includes(q.concept)) {
+          collabState.progress[creatorId].weakAreas.push(q.concept);
+        }
+      }
+      if (collabState.identities[creatorId]) collabState.identities[creatorId].history.push(q.id);
       saveState();
-      return { success: true };
+      return { success: true, correct, expected: q.answer };
     }
   });
 
-  /* Tool 5 — get_identity */
+  /* Tool 5 — explain_mistake */
   mc.registerTool({
-    name: "get_identity",
-    description: "Read a contributor's identity and style metadata from the graph.",
+    name: "explain_mistake",
+    description: "Agent explains why the user's answer was wrong.",
     inputSchema: {
       type: "object",
-      properties: { creatorId: { type: "string" } },
-      required: ["creatorId"]
+      properties: { questionId: { type: "string" } },
+      required: ["questionId"]
     },
     execute: async (input) => {
       loadState();
-      const id = input.creatorId;
-      const info = collabState.identities[id];
-      if (!info) return { success: false, error: "identity not found" };
-      return { success: true, identity: { id, name: info.name, style: info.style, noteCount: info.history.length } };
+      const q = collabState.questions.find((v) => v.id === input.questionId);
+      if (!q || !q.userAnswer) return { success: false, error: "question not answered" };
+      const explanation = `Your answer was: "${q.userAnswer}". The correct concept is: "${q.answer}". The key idea is that ${q.concept} involves risks that can be mitigated through proper validation, encoding, and access controls.`;
+      log(`[tool:explain_mistake] Q#${input.questionId} explanation provided`);
+      return { success: true, explanation, concept: q.concept };
     }
   });
 
-  /* Tool 6 — clear_canvas */
+  /* Tool 6 — get_progress */
+  mc.registerTool({
+    name: "get_progress",
+    description: "Read mastery stats per creator.",
+    inputSchema: {
+      type: "object",
+      properties: { creator: { type: "string" } },
+      required: ["creator"]
+    },
+    execute: async (input) => {
+      loadState();
+      const creatorId = ensureIdentity(input.creator);
+      return { success: true, progress: collabState.progress[creatorId] || { correct: 0, total: 0, weakAreas: [] } };
+    }
+  });
+
+  /* Tool 7 — get_weak_areas */
+  mc.registerTool({
+    name: "get_weak_areas",
+    description: "Find concepts the learner struggles with.",
+    inputSchema: {
+      type: "object",
+      properties: { creator: { type: "string" } },
+      required: ["creator"]
+    },
+    execute: async (input) => {
+      loadState();
+      const creatorId = ensureIdentity(input.creator);
+      const prog = collabState.progress[creatorId];
+      const weak = prog ? prog.weakAreas : [];
+      const recommended = [];
+      OWASP_CONCEPTS.forEach((c) => {
+        if (weak.includes(c.title) || (!weak.includes(c.title) && Math.random() > 0.7)) {
+          recommended.push(c.title);
+        }
+      });
+      return { success: true, weakAreas: weak, recommendedConcepts: recommended };
+    }
+  });
+
+  /* Tool 8 — create_flashcard_set */
+  mc.registerTool({
+    name: "create_flashcard_set",
+    description: "Batch-generate flashcards for a security concept.",
+    inputSchema: {
+      type: "object",
+      properties: { concept: { type: "string" }, count: { type: "integer", minimum: 1, maximum: 10, default: 3 } },
+      required: ["concept"]
+    },
+    execute: async (input) => {
+      loadState();
+      const count = input.count || 3;
+      const cards = [];
+      for (let i = 0; i < count; i++) {
+        cards.push({
+          front: `Q${i+1}: What is ${input.concept}?`,
+          back: `${input.concept} is a critical vulnerability that requires secure coding practices to mitigate.`
+        });
+      }
+      log(`[tool:create_flashcard_set] ${count} cards for "${input.concept}"`);
+      return { success: true, flashcards: cards };
+    }
+  });
+
+  /* Tool 9 — clear_canvas */
   mc.registerTool({
     name: "clear_canvas",
-    description: "Reset the entire shared canvas.",
+    description: "Reset the canvas and progress.",
     inputSchema: { type: "object", properties: {} },
     execute: async () => {
       collabState.notes = [];
-      collabState.draws = [];
+      collabState.questions = [];
+      collabState.progress = {};
+      collabState.identities = {};
+      collabState.concepts = [];
       collabState.nextId = 1;
+      collabState.nextCreator = 1;
+      collabState.nextConcept = 1;
       saveState();
-      log("[tool:clear_canvas] canvas reset");
       return { success: true };
     }
   });
 
-  /* Tool 7 — snapshot */
+  /* Tool 10 — snapshot */
   mc.registerTool({
     name: "snapshot",
-    description: "Export the full canvas state plus a reasoning trace for judging transparency.",
+    description: "Export full canvas state, concepts, questions, and progress trace.",
     inputSchema: { type: "object", properties: {} },
     execute: async () => {
       loadState();
       const snap = {
         timestamp: new Date().toISOString(),
         state: collabState,
-        reasoningTrace: collabState.notes.map((n) => ({
-          noteId: n.id,
-          text: n.text,
-          owner: n.owner,
-          creator: n.creator,
-          position: { x: n.x, y: n.y },
-        })),
+        reasoningTrace: collabState.notes.map((n) => ({ noteId: n.id, text: n.text, owner: n.owner, creator: n.creator, concept: n.concept })),
+        quizResults: collabState.questions.map((q) => ({ questionId: q.id, concept: q.concept, correct: q.correct, userAnswer: q.userAnswer, expected: q.answer })),
       };
-      log("[tool:snapshot] exported " + collabState.notes.length + " notes + trace");
+      log("[tool:snapshot] exported " + collabState.notes.length + " notes + " + collabState.questions.length + " quiz results");
       return { success: true, snapshot: JSON.stringify(snap, null, 2) };
     }
   });
 
-  /* Discoverable tool list — agents can list_tools to see what's available */
+  /* Discoverable tool list */
   mc.registerTool({
     name: "list_tools",
-    description: "Discover all tools currently registered on this WebMCP page.",
+    description: "Discover all tools registered on this WebMCP page.",
     inputSchema: { type: "object", properties: {} },
     execute: async () => {
       return {
         tools: [
-          { name: "add_note", description: "Add a text note to the shared canvas" },
-          { name: "list_notes", description: "List all notes on canvas" },
-          { name: "move_note", description: "Move a note" },
-          { name: "add_agent", description: "Register an AI agent persona" },
-          { name: "get_identity", description: "Read creator identity & style" },
-          { name: "clear_canvas", description: "Reset the canvas" },
-          { name: "snapshot", description: "Export state + reasoning trace" },
-        ],
+          { name: "add_note", description: "Add a security concept note" },
+          { name: "list_notes", description: "List all notes" },
+          { name: "generate_question", description: "Generate a quiz question on a concept" },
+          { name: "check_answer", description: "Submit answer to a question" },
+          { name: "explain_mistake", description: "Explain why an answer was wrong" },
+          { name: "get_progress", description: "Read mastery stats" },
+          { name: "get_weak_areas", description: "Find concepts to review" },
+          { name: "create_flashcard_set", description: "Generate study flashcards" },
+          { name: "clear_canvas", description: "Reset canvas" },
+          { name: "snapshot", description: "Export state + trace" },
+        ]
       };
     }
   });
 
-  /* Expose canvas state as an MCP resource so agents can read it directly */
+  /* Expose state as MCP resources */
   mc.registerResource({
-    uriTemplate: "resource://collabcanvas/state",
-    description: "The full shared canvas state (notes, draws, agents, identities).",
+    uriTemplate: "resource://securitylab/state",
+    description: "Full canvas state: notes, concepts, questions, identities, progress.",
     read: async () => {
       loadState();
-      return { contents: [{ uri: "resource://collabcanvas/state", text: JSON.stringify(collabState, null, 2), mimeType: "application/json" }] };
+      return { contents: [{ uri: "resource://securitylab/state", text: JSON.stringify(collabState, null, 2), mimeType: "application/json" }] };
     }
   });
 
-  /* Identity resource */
   mc.registerResource({
-    uriTemplate: "resource://collabcanvas/identities/{creatorId}",
-    description: "Read a contributor's identity and contribution history.",
-    read: async (params) => {
+    uriTemplate: "resource://securitylab/concepts",
+    description: "Available OWASP Top 10 learning concepts.",
+    read: async () => {
       loadState();
-      const id = params.creatorId;
-      const info = collabState.identities[id];
-      if (!info) return { contents: [] };
-      return { contents: [{ uri: `resource://collabcanvas/identities/${id}`, text: JSON.stringify({ id, name: info.name, style: info.style, noteIds: info.history }, null, 2), mimeType: "application/json" }] };
+      return { contents: [{ uri: "resource://securitylab/concepts", text: JSON.stringify(collabState.concepts, null, 2), mimeType: "application/json" }] };
     }
   });
 
-  log("WebMCP tools registered: add_note, list_notes, move_note, add_agent, get_identity, clear_canvas, snapshot, list_tools");
-  log("WebMCP resources: resource://collabcanvas/state, resource://collabcanvas/identities/{creatorId}");
+  log("WebMCP tools registered: add_note, list_notes, generate_question, check_answer, explain_mistake, get_progress, get_weak_areas, create_flashcard_set, clear_canvas, snapshot, list_tools");
+  log("WebMCP resources: resource://securitylab/state, resource://securitylab/concepts");
 } else {
   log("WebMCP modelContext not detected — running in standard browser mode (canvas still works).");
 }
@@ -325,24 +460,23 @@ function initHumanControls() {
 
     if (window.document.modelContext) {
       window.document.modelContext.callTool("add_note", {
-        text: "💡 idea",
+        text: "Security concept",
         x: Math.round(svgP.x),
         y: Math.round(svgP.y),
         owner: "human",
         creator: "human",
-        style: "casual"
+        concept: "General"
       }).then(() => { loadState(); render(); })
         .catch(() => {
-          // fallback: write locally
           loadState();
-          const id = ensureIdentity("human", "casual");
-          collabState.notes.push({ id: String(collabState.nextId++), text: "💡 idea", x: Math.round(svgP.x), y: Math.round(svgP.y), owner: "human", creator: id });
+          const id = ensureIdentity("human");
+          collabState.notes.push({ id: String(collabState.nextId++), text: "Security concept", x: Math.round(svgP.x), y: Math.round(svgP.y), owner: "human", creator: id, concept: "General" });
           saveState(); render();
         });
     } else {
       loadState();
-      const id = ensureIdentity("human", "casual");
-      collabState.notes.push({ id: String(collabState.nextId++), text: "💡 idea", x: Math.round(svgP.x), y: Math.round(svgP.y), owner: "human", creator: id });
+      const id = ensureIdentity("human");
+      collabState.notes.push({ id: String(collabState.nextId++), text: "Security concept", x: Math.round(svgP.x), y: Math.round(svgP.y), owner: "human", creator: id, concept: "General" });
       saveState(); render();
     }
   });
@@ -358,4 +492,4 @@ loadState();
 render();
 listToolsUI();
 initHumanControls();
-log("CollabCanvas ready. Click the canvas to place a note. An AI agent can join via WebMCP.");
+log("Security Lab Canvas ready. Click the canvas to place a note. An AI agent can join via WebMCP.");

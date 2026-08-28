@@ -1,13 +1,11 @@
-// CollabCanvas Service Worker — offline-first + sync
-const CACHE = "collabcanvas-v1";
+// Security Lab Canvas Service Worker — offline-first + sync
+const CACHE = "securitylab-v1";
 const ASSETS = [
   "/",
   "/index.html",
   "/app.js",
   "/style.css",
   "/manifest.json",
-  "/icon-192.png",
-  "/icon-512.png",
 ];
 
 self.addEventListener("install", (e) => {
@@ -21,14 +19,13 @@ self.addEventListener("fetch", (e) => {
 });
 
 self.addEventListener("sync", (e) => {
-  if (e.tag === "collab-sync") {
+  if (e.tag === "securitylab-sync") {
     e.waitUntil(
       (async () => {
-        // Sync any pending local notes back to server when online
-        const pending = localStorage.getItem("collabcanvas-pending");
+        const pending = localStorage.getItem("securitylab-pending");
         if (pending) {
           console.log("[sw] sync pending notes:", pending);
-          localStorage.removeItem("collabcanvas-pending");
+          localStorage.removeItem("securitylab-pending");
         }
       })()
     );
