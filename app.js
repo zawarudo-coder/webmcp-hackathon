@@ -1,608 +1,173 @@
-/* FinCanvas — WebMCP-powered collaborative financial analyst canvas */
+/* FinCanvas — WebMCP analyst co-pilot (no build step). */
 const state = {
-  version: 3,
-  notes: [],          // {id,text,x,y,owner,creator,createdAt}
-  companies: [],      // {ticker,name,sector,financials?:object,notes?:[]}
-  ratios: [],         // {id,ticker,ratio,value,computedAt}
-  anomalies: [],      // {id,ticker,lineItem,value}
-  identities: {},     // id -> {name,role,history}
-  paths: [],          // drawn agent reasoning paths (x0,y0 -> x1,y1)
-  nextId: 1,
-  nextCreator: 1,
-  nextRatio: 1,
-  nextAnomaly: 1,
+  version: 4,
+  notes: [],
+  companies: [],
+  ratios: [],
+  anomalies: [],
+  identities: {},
+  paths: [],
+  nextId: 1, nextCreator: 1, nextRatio: 1, nextAnomaly: 1,
 };
 
-/* ===== Mock financial data (public-company style) ===== */
-const MOCK_FINANCIALS = {
-  AAPL: {
-    name: "Apple Inc.",
-    sector: "Technology",
-    data: {
-      "2024": { revenue: 383.0, netIncome: 97.6, totalAssets: 336.0, totalDebt: 206.0, shareholdersEquity: 62.0, sharesOutstanding: 15.8 },
-      "2023": { revenue: 383.3, netIncome: 97.0, totalAssets: 352.0, totalDebt: 178.0, shareholdersEquity: 62.7, sharesOutstanding: 16.4 },
-      "2022": { revenue: 394.3, netIncome: 99.8, totalAssets: 346.0, totalDebt: 111.0, shareholdersEquity: 63.1, sharesOutstanding: 16.5 },
-    },
-    price: 218.0,
-    marketCap: 3_400,
-  },
-  MSFT: {
-    name: "Microsoft Corp.",
-    sector: "Technology",
-    data: {
-      "2024": { revenue: 211.9, netIncome: 72.4, totalAssets: 412.0, totalDebt: 75.0, shareholdersEquity: 198.0, sharesOutstanding: 7.4 },
-      "2023": { revenue: 211.9, netIncome: 72.0, totalAssets: 387.0, totalDebt: 56.0, shareholdersEquity: 193.0, sharesOutstanding: 7.4 },
-      "2022": { revenue: 198.3, netIncome: 61.2, totalAssets: 365.0, totalDebt: 44.0, shareholdersEquity: 185.0, sharesOutstanding: 7.5 },
-    },
-    price: 420.0,
-    marketCap: 3_100,
-  },
-  TSLA: {
-    name: "Tesla Inc.",
-    sector: "Automotive",
-    data: {
-      "2024": { revenue: 97.7, netIncome: 15.0, totalAssets: 152.0, totalDebt: 47.0, shareholdersEquity: 52.0, sharesOutstanding: 3.1 },
-      "2023": { revenue: 96.8, netIncome: 15.0, totalAssets: 151.0, totalDebt: 45.0, shareholdersEquity: 50.0, sharesOutstanding: 3.1 },
-      "2022": { revenue: 81.5, netIncome: 12.6, totalAssets: 139.0, totalDebt: 39.0, shareholdersEqualty: 43.0, sharesOutstanding: 3.2 },
-    },
-    price: 250.0,
-    marketCap: 797,
-  },
+const MOCK = {
+  AAPL: { name: "Apple Inc.", sector: "Technology", price: 218, marketCap: 3400,
+    data: { "2024": { revenue: 383, netIncome: 97.6, totalAssets: 336, totalDebt: 206, shareholdersEquity: 62, grossProfit: 185 },
+            "2023": { revenue: 383.3, netIncome: 97, totalAssets: 352, totalDebt: 178, shareholdersEquity: 62.7, grossProfit: 185 },
+            "2022": { revenue: 394.3, netIncome: 99.8, totalAssets: 346, totalDebt: 111, shareholdersEquity: 63.1, grossProfit: 191 } } },
+  MSFT: { name: "Microsoft Corp.", sector: "Technology", price: 420, marketCap: 3100,
+    data: { "2024": { revenue: 211.9, netIncome: 72.4, totalAssets: 412, totalDebt: 75, shareholdersEquity: 198, grossProfit: 147 },
+            "2023": { revenue: 211.9, netIncome: 72, totalAssets: 387, totalDebt: 56, shareholdersEquity: 193, grossProfit: 146 },
+            "2022": { revenue: 198.3, netIncome: 61.2, totalAssets: 365, totalDebt: 44, shareholdersEquity: 185, grossProfit: 137 } } },
+  TSLA: { name: "Tesla Inc.", sector: "Automotive", price: 250, marketCap: 797,
+    data: { "2024": { revenue: 97.7, netIncome: 15, totalAssets: 152, totalDebt: 47, shareholdersEquity: 52, grossProfit: 18 },
+            "2023": { revenue: 96.8, netIncome: 15, totalAssets: 151, totalDebt: 45, shareholdersEquity: 50, grossProfit: 18 },
+            "2022": { revenue: 81.5, netIncome: 12.6, totalAssets: 139, totalDebt: 39, shareholdersEquity: 43, grossProfit: 15 } } },
 };
 
-/* ===== Persistence + sync ===== */
-function loadState() {
-  const raw = localStorage.getItem("fincanvas-state");
-  if (raw) Object.assign(state, JSON.parse(raw));
-}
-
-function saveState() {
+/* ---- persistence + sync ---- */
+function load() { const r = localStorage.getItem("fincanvas-state"); if (r) Object.assign(state, JSON.parse(r)); }
+function save() {
   localStorage.setItem("fincanvas-state", JSON.stringify(state));
-  const bc = new (window.BroadcastChannel || function () { return { postMessage() {} }; })("fincanvas");
-  bc.postMessage({ type: "state-update", state: JSON.stringify(state) });
+  const bc = new (window.BroadcastChannel || function(){return{postMessage(){}}})("fincanvas");
+  bc.postMessage({ type: "u", state: JSON.stringify(state) });
   window.dispatchEvent(new StorageEvent("storage", { key: "fincanvas-state", newValue: JSON.stringify(state) }));
 }
+window.addEventListener("storage", (e) => { if (e.key==="fincanvas-state" && e.newValue){ Object.assign(state, JSON.parse(e.newValue)); render(); } });
+if ("BroadcastChannel" in window) { const bc = new BroadcastChannel("fincanvas"); bc.onmessage = (e)=>{ if(e.data?.type==="u"){ Object.assign(state, JSON.parse(e.data.state)); render(); } }; }
 
-window.addEventListener("storage", (e) => {
-  if (e.key === "fincanvas-state" && e.newValue) {
-    Object.assign(state, JSON.parse(e.newValue));
-    render();
-  }
-});
-
-if ("BroadcastChannel" in window) {
-  const bc = new BroadcastChannel("fincanvas");
-  bc.onmessage = (e) => {
-    if (e.data && e.data.type === "state-update") {
-      Object.assign(state, JSON.parse(e.data.state));
-      render();
-    }
-  };
-}
-
-/* ===== Identity helpers ===== */
-function ensureIdentity(name, role) {
-  const existing = Object.entries(state.identities).find(([, v]) => v.name === name);
-  if (existing) return existing[0];
+function ensureId(name, role) {
+  const ex = Object.entries(state.identities).find(([,v]) => v.name === name);
+  if (ex) return ex[0];
   const id = String(state.nextCreator++);
   state.identities[id] = { name, role: role || "analyst", history: [] };
   return id;
 }
 
-/* ===== Logging ===== */
-function log(msg) {
-  const el = document.getElementById("log");
-  el.textContent += msg + "\n";
-  el.scrollTop = el.scrollHeight;
-}
+function log(m) { const el = document.getElementById("log"); el.textContent += m + "\n"; el.scrollTop = el.scrollHeight; }
 
-/* ===== Rendering ===== */
+/* ---- render ---- */
 function render() {
-  const svg = document.getElementById("canvas");
-  svg.innerHTML = "";
-
-  // Draw agent reasoning paths
+  const svg = document.getElementById("canvas"); svg.innerHTML = "";
   state.paths.forEach((p) => {
-    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-    line.setAttribute("x1", p.fromX);
-    line.setAttribute("y1", p.fromY);
-    line.setAttribute("x2", p.toX);
-    line.setAttribute("y2", p.toY);
-    line.setAttribute("class", "agent-path");
-    svg.appendChild(line);
+    const l = document.createElementNS("http://www.w3.org/2000/svg","line");
+    l.setAttribute("x1",p.fromX); l.setAttribute("y1",p.fromY); l.setAttribute("x2",p.toX); l.setAttribute("y2",p.toY);
+    l.setAttribute("class","agent-path"); svg.appendChild(l);
   });
-
-  // Company cards
-  state.companies.forEach((c, i) => {
-    const x = 60;
-    const y = 40 + i * 110;
-    const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
-    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    rect.setAttribute("x", x);
-    rect.setAttribute("y", y);
-    rect.setAttribute("width", "200");
-    rect.setAttribute("height", "90");
-    rect.setAttribute("rx", "8");
-    rect.setAttribute("class", "company-card");
-    g.appendChild(rect);
-    const title = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    title.setAttribute("x", x + 12);
-    title.setAttribute("y", y + 22);
-    title.setAttribute("class", "ticker");
-    title.textContent = c.ticker;
-    g.appendChild(title);
-    const name = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    name.setAttribute("x", x + 12);
-    name.setAttribute("y", y + 40);
-    name.setAttribute("class", "company-label");
-    name.textContent = c.name;
-    g.appendChild(name);
-    const sector = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    sector.setAttribute("x", x + 12);
-    sector.setAttribute("y", y + 56);
-    sector.setAttribute("class", "note-label");
-    sector.textContent = c.sector;
-    g.appendChild(sector);
+  state.companies.forEach((c,i) => {
+    const x = 60, y = 40 + i*110;
+    const g = document.createElementNS("http://www.w3.org/2000/svg","g");
+    const r = document.createElementNS("http://www.w3.org/2000/svg","rect");
+    r.setAttribute("x",x); r.setAttribute("y",y); r.setAttribute("width",200); r.setAttribute("height",90); r.setAttribute("rx",8); r.setAttribute("class","company-card");
+    g.appendChild(r);
+    const t = document.createElementNS("http://www.w3.org/2000/svg","text"); t.setAttribute("x",x+12); t.setAttribute("y",y+22); t.setAttribute("class","ticker"); t.textContent = c.ticker; g.appendChild(t);
+    const n = document.createElementNS("http://www.w3.org/2000/svg","text"); n.setAttribute("x",x+12); n.setAttribute("y",y+40); n.setAttribute("class","company-label"); n.textContent = c.name; g.appendChild(n);
+    const s = document.createElementNS("http://www.w3.org/2000/svg","text"); s.setAttribute("x",x+12); s.setAttribute("y",y+56); s.setAttribute("class","note-label"); s.textContent = c.sector; g.appendChild(s);
+    svg.appendChild(g);
+    const years=["2022","2023","2024"]; const vals=years.map(y=>c.financials?.data?.[y]?.revenue||0); const maxV=Math.max(...vals,1);
+    years.forEach((yr,idx)=>{ const px=x+40+idx*40, py=y+90-8-((vals[idx]/maxV)*24); const d=document.createElementNS("http://www.w3.org/2000/svg","circle"); d.setAttribute("cx",px); d.setAttribute("cy",py); d.setAttribute("r",4); d.setAttribute("class","chart-point"); svg.appendChild(d); });
+  });
+  state.notes.forEach((nt) => {
+    const g = document.createElementNS("http://www.w3.org/2000/svg","g");
+    const r = document.createElementNS("http://www.w3.org/2000/svg","rect");
+    r.setAttribute("x",nt.x); r.setAttribute("y",nt.y); r.setAttribute("width",180); r.setAttribute("height",70); r.setAttribute("rx",8); r.setAttribute("class", nt.owner==="human"?"note-h":"note-a");
+    g.appendChild(r);
+    const tx = document.createElementNS("http://www.w3.org/2000/svg","text"); tx.setAttribute("x",nt.x+10); tx.setAttribute("y",nt.y+22); tx.textContent = nt.text.length>28?nt.text.slice(0,28)+"…":nt.text; g.appendChild(tx);
+    if (nt.creator){ const tg=document.createElementNS("http://www.w3.org/2000/svg","text"); tg.setAttribute("x",nt.x+10); tg.setAttribute("y",nt.y+42); tg.setAttribute("class","note-label"); tg.textContent="@"+(state.identities[nt.creator]?.name||nt.creator); g.appendChild(tg); }
     svg.appendChild(g);
   });
-
-  // Notes
-  state.notes.forEach((n) => {
-    const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
-    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    rect.setAttribute("x", n.x);
-    rect.setAttribute("y", n.y);
-    rect.setAttribute("width", "180");
-    rect.setAttribute("height", "70");
-    rect.setAttribute("rx", "8");
-    rect.setAttribute("class", n.owner === "human" ? "note-h" : "note-a");
-    g.appendChild(rect);
-    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    text.setAttribute("x", n.x + 10);
-    text.setAttribute("y", n.y + 22);
-    text.textContent = n.text.length > 28 ? n.text.substring(0, 28) + "…" : n.text;
-    g.appendChild(text);
-    if (n.creator) {
-      const tag = document.createElementNS("http://www.w3.org/2000/svg", "text");
-      tag.setAttribute("x", n.x + 10);
-      tag.setAttribute("y", n.y + 42);
-      tag.setAttribute("class", "note-label");
-      tag.textContent = "@" + (state.identities[n.creator]?.name || n.creator);
-      g.appendChild(tag);
-    }
-    svg.appendChild(g);
-  });
-
-  // Data points / mini-chart
-  state.companies.forEach((c, ci) => {
-    const cx = 60;
-    const cy = 40 + ci * 110 + 90;
-    const years = ["2022", "2023", "2024"];
-    const vals = years.map((y) => c.financials?.data?.[y]?.revenue || 0);
-    const maxV = Math.max(...vals, 1);
-    years.forEach((yr, i) => {
-      const px = cx + 40 + i * 40;
-      const py = cy - 8 - ((vals[i] / maxV) * 24);
-      const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-      dot.setAttribute("cx", px);
-      dot.setAttribute("cy", py);
-      dot.setAttribute("r", "4");
-      dot.setAttribute("class", "chart-point");
-      svg.appendChild(dot);
-    });
-  });
-
-  // Anomalies
-  state.anomalies.forEach((a, i) => {
-    const y = 120 + i * 24;
-    const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
-    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    rect.setAttribute("x", 760);
-    rect.setAttribute("y", y);
-    rect.setAttribute("width", "220");
-    rect.setAttribute("height", "20");
-    rect.setAttribute("rx", "4");
-    rect.setAttribute("class", "anomaly-flag");
-    g.appendChild(rect);
-    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    text.setAttribute("x", 770);
-    text.setAttribute("y", y + 14);
-    text.setAttribute("fill", "#fbbf24");
-    text.textContent = a.ticker + " " + a.lineItem + ": " + a.value;
-    g.appendChild(text);
-    svg.appendChild(g);
-  });
-
-  renderCompanyList();
-  renderRatioList();
+  state.anomalies.forEach((a,i)=>{ const y=120+i*24; const g=document.createElementNS("http://www.w3.org/2000/svg","g"); const r=document.createElementNS("http://www.w3.org/2000/svg","rect"); r.setAttribute("x",760); r.setAttribute("y",y); r.setAttribute("width",220); r.setAttribute("height",20); r.setAttribute("rx",4); r.setAttribute("class","anomaly-flag"); g.appendChild(r); const tx=document.createElementNS("http://www.w3.org/2000/svg","text"); tx.setAttribute("x",770); tx.setAttribute("y",y+14); tx.setAttribute("fill","#fbbf24"); tx.textContent=a.ticker+" "+a.lineItem+": "+a.value; g.appendChild(tx); svg.appendChild(g); });
+  renderLists();
+}
+function renderLists() {
+  const cl = document.getElementById("company-list"); cl.innerHTML = "";
+  state.companies.forEach((c,i)=>{ const li=document.createElement("li"); li.innerHTML=`<strong>${c.ticker}</strong> — ${c.name} <span class="del" onclick="removeCompany(${i})">✕</span>`; cl.appendChild(li); });
+  const rl = document.getElementById("ratio-list"); rl.innerHTML = "";
+  state.ratios.forEach((r)=>{ const li=document.createElement("li"); li.innerHTML=`<span>${r.ticker} ${r.ratio}</span><span class="v">${r.value.toFixed(2)}</span>`; rl.appendChild(li); });
   listToolsUI();
 }
-
-function renderCompanyList() {
-  const ul = document.getElementById("company-list");
-  ul.innerHTML = "";
-  state.companies.forEach((c, i) => {
-    const li = document.createElement("li");
-    li.innerHTML = `<strong>${c.ticker}</strong> — ${c.name} <span class="del" onclick="removeCompany(${i})">✕</span>`;
-    ul.appendChild(li);
-  });
-}
-
-function removeCompany(idx) {
-  state.companies.splice(idx, 1);
-  saveState(); render();
-}
-
-function renderRatioList() {
-  const ul = document.getElementById("ratio-list");
-  ul.innerHTML = "";
-  state.ratios.forEach((r) => {
-    const li = document.createElement("li");
-    li.innerHTML = `<span class="ratio-name">${r.ticker} ${r.ratio}</span> <span class="ratio-val">${r.value.toFixed(2)}</span>`;
-    ul.appendChild(li);
-  });
-}
-
 function listToolsUI() {
-  const ul = document.getElementById("tool-list");
-  ul.innerHTML = "";
-  const tools = [
-    { name: "create_company_profile", desc: "Add a company to the canvas" },
-    { name: "fetch_financials", desc: "Pull financial data for a ticker" },
-    { name: "add_note", desc: "Place an insight/analysis note" },
-    { name: "add_data_point", desc: "Plot a financial metric" },
-    { name: "calculate_ratio", desc: "Compute P/E, ROE, Debt/Equity, etc." },
-    { name: "highlight_anomaly", desc: "Flag a suspicious line item" },
-    { name: "generate_hypothesis", desc: "Agent proposes an investment thesis" },
-    { name: "list_companies", desc: "List all companies on canvas" },
-    { name: "snapshot", desc: "Export memo + reasoning trace" },
-    { name: "list_tools", desc: "Discover all available tools" },
-  ];
-  tools.forEach((t) => {
-    const li = document.createElement("li");
-    li.innerHTML = `<strong>${t.name}</strong>: ${t.desc}`;
-    ul.appendChild(li);
-  });
+  const ul = document.getElementById("tool-list"); ul.innerHTML = "";
+  ["create_company_profile","fetch_financials","add_note","add_data_point","calculate_ratio","highlight_anomaly","generate_hypothesis","apply_theme","restyle_component","list_companies","snapshot","list_tools"]
+    .forEach((n)=>{ const li=document.createElement("li"); li.innerHTML=`<strong>${n}</strong>`; ul.appendChild(li); });
 }
+function removeCompany(i){ state.companies.splice(i,1); save(); render(); }
 
-/* ===== WebMCP Integration ===== */
+/* ---- WebMCP ---- */
 if (window.document.modelContext && typeof window.document.modelContext.registerTool === "function") {
   const mc = window.document.modelContext;
 
-  /* Tool 1 — create_company_profile */
-  mc.registerTool({
-    name: "create_company_profile",
-    description: "Add a company card to the canvas (ticker + name + sector).",
-    inputSchema: {
-      type: "object",
-      properties: {
-        ticker: { type: "string", description: "Stock ticker (e.g. AAPL)." },
-        name: { type: "string", description: "Full company name." },
-        sector: { type: "string", description: "Industry sector." }
-      },
-      required: ["ticker", "name", "sector"]
-    },
-    execute: async (input) => {
-      loadState();
-      state.companies.push({ ticker: input.ticker, name: input.name, sector: input.sector, financials: MOCK_FINANCIALS[input.ticker], notes: [] });
-      saveState();
-      log(`[tool:create_company_profile] added ${input.ticker} — ${input.name} (${input.sector})`);
-      return { success: true, ticker: input.ticker };
-    }
-  });
+  mc.registerTool({ name:"create_company_profile", description:"Add a company card to the canvas.",
+    inputSchema:{ type:"object", properties:{ ticker:{type:"string"}, name:{type:"string"}, sector:{type:"string"} }, required:["ticker","name","sector"] },
+    execute: async (i)=>{ load(); state.companies.push({ ticker:i.ticker, name:i.name, sector:i.sector, financials:MOCK[i.ticker], notes:[] }); save(); log(`[+company] ${i.ticker}`); return { success:true }; } });
 
-  /* Tool 2 — fetch_financials */
-  mc.registerTool({
-    name: "fetch_financials",
-    description: "Pull financial data for a ticker from our mock SEC/AlphaVantage dataset.",
-    inputSchema: {
-      type: "object",
-      properties: { ticker: { type: "string" } },
-      required: ["ticker"]
-    },
-    execute: async (input) => {
-      loadState();
-      const c = state.companies.find((c) => c.ticker === input.ticker);
-      if (!c) return { success: false, error: "company not on canvas" };
-      const data = MOCK_FINANCIALS[input.ticker];
-      if (!data) return { success: false, error: "no mock financials for " + input.ticker };
-      c.financials = data;
-      saveState();
-      log(`[tool:fetch_financials] loaded ${input.ticker} financials: ` + Object.keys(data.data).join(", "));
-      return { success: true, ticker: input.ticker, financials: data };
-    }
-  });
+  mc.registerTool({ name:"fetch_financials", description:"Pull financial data for a ticker.",
+    inputSchema:{ type:"object", properties:{ ticker:{type:"string"} }, required:["ticker"] },
+    execute: async (i)=>{ load(); const c=state.companies.find(c=>c.ticker===i.ticker); if(!c) return {success:false,error:"not on canvas"}; c.financials=MOCK[i.ticker]; save(); log(`[fetch] ${i.ticker} financials loaded`); return { success:true, financials:MOCK[i.ticker] }; } });
 
-  /* Tool 3 — add_note */
-  mc.registerTool({
-    name: "add_note",
-    description: "Place a sticky note on the canvas. Creator is tracked (human vs agent).",
-    inputSchema: {
-      type: "object",
-      properties: {
-        text: { type: "string" },
-        x: { type: "integer" },
-        y: { type: "integer" },
-        owner: { type: "string", enum: ["human", "agent"] },
-        creator: { type: "string", description: "Creator name for identity tracking." },
-        role: { type: "string", enum: ["analyst", "tutor", "user"], description: "Role of creator." }
-      },
-      required: ["text", "x", "y", "owner"]
-    },
-    execute: async (input) => {
-      loadState();
-      const creatorId = input.creator ? ensureIdentity(input.creator, input.role) : ensureIdentity(input.owner === "human" ? "human" : "ai-agent", "analyst");
-      const note = { id: String(state.nextId++), text: input.text, x: input.x, y: input.y, owner: input.owner, creator: creatorId, createdAt: new Date().toISOString() };
-      state.notes.push(note);
-      saveState();
-      log(`[tool:add_note] ${note.owner}@${state.identities[creatorId]?.name || creatorId}: "${note.text}" @(${note.x},${note.y})`);
-      return { success: true, noteId: note.id };
-    }
-  });
+  mc.registerTool({ name:"add_note", description:"Place a note on the canvas. Creator tracked.",
+    inputSchema:{ type:"object", properties:{ text:{type:"string"}, x:{type:"integer"}, y:{type:"integer"}, owner:{type:"string",enum:["human","agent"]}, creator:{type:"string"}, role:{type:"string",enum:["analyst","user"]} }, required:["text","x","y","owner"] },
+    execute: async (i)=>{ load(); const cid=i.creator?ensureId(i.creator,i.role):ensureId(i.owner==="human"?"human":"ai-agent","analyst"); const n={ id:String(state.nextId++), text:i.text, x:i.x, y:i.y, owner:i.owner, creator:cid, createdAt:new Date().toISOString() }; state.notes.push(n); save(); log(`[note] ${n.owner}: ${n.text}`); return { success:true, noteId:n.id }; } });
 
-  /* Tool 4 — add_data_point */
-  mc.registerTool({
-    name: "add_data_point",
-    description: "Add a plotted data point to the canvas mini-chart for a company.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        ticker: { type: "string" },
-        year: { type: "string" },
-        metric: { type: "string", enum: ["revenue", "netIncome", "totalAssets", "totalDebt"] },
-        value: { type: "number" }
-      },
-      required: ["ticker", "year", "metric", "value"]
-    },
-    execute: async (input) => {
-      loadState();
-      const c = state.companies.find((c) => c.ticker === input.ticker);
-      if (!c || !c.financials) return { success: false, error: "company or financials not found" };
-      if (!c.financials.data[input.year]) c.financials.data[input.year] = {};
-      c.financials.data[input.year][input.metric] = input.value;
-      saveState();
-      log(`[tool:add_data_point] ${input.ticker} ${input.year} ${input.metric} = ${input.value}`);
-      return { success: true };
-    }
-  });
+  mc.registerTool({ name:"add_data_point", description:"Plot a financial metric for a company.",
+    inputSchema:{ type:"object", properties:{ ticker:{type:"string"}, year:{type:"string"}, metric:{type:"string"}, value:{type:"number"} }, required:["ticker","year","metric","value"] },
+    execute: async (i)=>{ load(); const c=state.companies.find(c=>c.ticker===i.ticker); if(!c||!c.financials) return {success:false}; (c.financials.data[i.year]=c.financials.data[i.year]||{})[i.metric]=i.value; save(); log(`[data] ${i.ticker} ${i.metric}=${i.value}`); return { success:true }; } });
 
-  /* Tool 5 — calculate_ratio */
-  mc.registerTool({
-    name: "calculate_ratio",
-    description: "Compute a financial ratio for a company (P/E, ROE, Debt/Equity, Gross Margin, Net Margin).",
-    inputSchema: {
-      type: "object",
-      properties: {
-        ticker: { type: "string" },
-        ratio: { type: "string", enum: ["P/E", "ROE", "Debt/Equity", "Gross Margin", "Net Margin", "Current Ratio"] },
-        year: { type: "string" }
-      },
-      required: ["ticker", "ratio", "year"]
-    },
-    execute: async (input) => {
-      loadState();
-      const c = state.companies.find((c) => c.ticker === input.ticker);
-      if (!c || !c.financials?.data?.[input.year]) return { success: false, error: "data not found" };
-      const d = c.financials.data[input.year];
-      let val = 0;
-      switch (input.ratio) {
-        case "P/E":
-          val = c.financials.price ? (c.financials.marketCap / d.netIncome) : 0;
-          break;
-        case "ROE":
-          val = (d.netIncome / d.shareholdersEquity) * 100;
-          break;
-        case "Debt/Equity":
-          val = d.totalDebt / d.shareholdersEquity;
-          break;
-        case "Gross Margin":
-          val = (d.grossProfit || d.netIncome) / d.revenue * 100;
-          break;
-        case "Net Margin":
-          val = (d.netIncome / d.revenue) * 100;
-          break;
-        case "Current Ratio":
-          val = d.totalAssets / d.totalDebt; // simplified
-          break;
-      }
-      state.ratios.push({ id: String(state.nextRatio++), ticker: input.ticker, ratio: input.ratio, value: val, year: input.year, computedAt: new Date().toISOString() });
-      saveState();
-      log(`[tool:calculate_ratio] ${input.ticker} ${input.ratio} (${input.year}) = ${val.toFixed(2)}`);
-      return { success: true, ticker: input.ticker, ratio: input.ratio, value: val };
-    }
-  });
+  mc.registerTool({ name:"calculate_ratio", description:"Compute a financial ratio for a company.",
+    inputSchema:{ type:"object", properties:{ ticker:{type:"string"}, ratio:{type:"string",enum:["P/E","ROE","Debt/Equity","Gross Margin","Net Margin"]}, year:{type:"string"} }, required:["ticker","ratio","year"] },
+    execute: async (i)=>{ load(); const c=state.companies.find(c=>c.ticker===i.ticker); const d=c?.financials?.data?.[i.year]; if(!d) return {success:false}; let v=0;
+      if(i.ratio==="P/E") v=c.financials.price?(c.financials.marketCap/d.netIncome):0;
+      else if(i.ratio==="ROE") v=(d.netIncome/d.shareholdersEquity)*100;
+      else if(i.ratio==="Debt/Equity") v=d.totalDebt/d.shareholdersEquity;
+      else if(i.ratio==="Gross Margin") v=(d.grossProfit/d.revenue)*100;
+      else if(i.ratio==="Net Margin") v=(d.netIncome/d.revenue)*100;
+      state.ratios.push({ id:String(state.nextRatio++), ticker:i.ticker, ratio:i.ratio, value:v, year:i.year }); save(); log(`[ratio] ${i.ticker} ${i.ratio}=${v.toFixed(2)}`); return { success:true, value:v }; } });
 
-  /* Tool 6 — highlight_anomaly */
-  mc.registerTool({
-    name: "highlight_anomaly",
-    description: "Flag a suspicious or unusual financial line item for later review.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        ticker: { type: "string" },
-        lineItem: { type: "string" },
-        value: { type: "string" },
-        reason: { type: "string" }
-      },
-      required: ["ticker", "lineItem", "value"]
-    },
-    execute: async (input) => {
-      loadState();
-      const anomaly = { id: String(state.nextAnomaly++), ticker: input.ticker, lineItem: input.lineItem, value: input.value, reason: input.reason || "", flaggedAt: new Date().toISOString() };
-      state.anomalies.push(anomaly);
-      saveState();
-      log(`[tool:highlight_anomaly] ${input.ticker} ${input.lineItem} = ${input.value} — ${input.reason || "flagged"}`);
-      return { success: true, anomalyId: anomaly.id };
-    }
-  });
+  mc.registerTool({ name:"highlight_anomaly", description:"Flag a suspicious line item.",
+    inputSchema:{ type:"object", properties:{ ticker:{type:"string"}, lineItem:{type:"string"}, value:{type:"string"}, reason:{type:"string"} }, required:["ticker","lineItem","value"] },
+    execute: async (i)=>{ load(); state.anomalies.push({ id:String(state.nextAnomaly++), ticker:i.ticker, lineItem:i.lineItem, value:i.value, reason:i.reason||"" }); save(); log(`[anomaly] ${i.ticker} ${i.lineItem}`); return { success:true }; } });
 
-  /* Tool 7 — generate_hypothesis */
-  mc.registerTool({
-    name: "generate_hypothesis",
-    description: "Agent generates an investment hypothesis based on the canvas state.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        ticker: { type: "string" },
-        creator: { type: "string" },
-        focus: { type: "string", enum: ["growth", "value", "turnaround", "quality"] }
-      },
-      required: ["ticker"]
-    },
-    execute: async (input) => {
-      loadState();
-      const focus = input.focus || "growth";
-      const hypotheses = {
-        growth: `${input.ticker} shows accelerating revenue and expanding gross margins, indicating a company in a strong growth phase. Recommend accumulate position ahead of the next earnings cycle.`,
-        value: `${input.ticker} is trading at a discount relative to its sector P/E and holds strong cash flow generation. Potential value opportunity if trends hold.`,
-        turnaround: `${input.ticker} exhibits declining net income but stable revenue — a potential turnaround play if cost measures take effect. Monitor next quarter closely.`,
-        quality: `${input.ticker} maintains consistent ROE and manageable debt-to-equity, reflecting operational quality and financial discipline.`,
-      };
-      const noteId = String(state.nextId++);
-      const creatorId = input.creator ? ensureIdentity(input.creator, "analyst") : ensureIdentity("ai-agent", "analyst");
-      const note = { id: noteId, text: hypotheses[focus], x: 800, y: 100 + Math.random() * 200, owner: "agent", creator: creatorId, createdAt: new Date().toISOString() };
-      state.notes.push(note);
-      saveState();
-      log(`[tool:generate_hypothesis] ${input.ticker} → ${focus} thesis created`);
-      return { success: true, noteId, hypothesis: hypotheses[focus] };
-    }
-  });
+  mc.registerTool({ name:"generate_hypothesis", description:"Agent proposes an investment thesis.",
+    inputSchema:{ type:"object", properties:{ ticker:{type:"string"}, creator:{type:"string"}, focus:{type:"string",enum:["growth","value","quality"]} }, required:["ticker"] },
+    execute: async (i)=>{ load(); const f=i.focus||"quality"; const h={ growth:`${i.ticker} shows expanding margins — accumulate ahead of earnings.`, value:`${i.ticker} trades below sector P/E with strong cash flow — value play.`, quality:`${i.ticker} holds consistent ROE and disciplined debt — high quality.` }[f];
+      const cid=i.creator?ensureId(i.creator,"analyst"):ensureId("ai-agent","analyst"); state.notes.push({ id:String(state.nextId++), text:h, x:780, y:120+Math.random()*180, owner:"agent", creator:cid, createdAt:new Date().toISOString() }); save(); log(`[hypothesis] ${i.ticker} → ${f}`); return { success:true, hypothesis:h }; } });
 
-  /* Tool 8 — list_companies */
-  mc.registerTool({
-    name: "list_companies",
-    description: "List all companies currently loaded on the canvas.",
-    inputSchema: { type: "object", properties: {} },
-    execute: async () => {
-      loadState();
-      return { companies: state.companies.map((c) => ({ ticker: c.ticker, name: c.name, sector: c.sector })) };
-    }
-  });
+  /* 21st.dev UI tools */
+  mc.registerTool({ name:"apply_theme", description:"Apply a 21st.dev design theme by setting CSS variables.",
+    inputSchema:{ type:"object", properties:{ variant:{type:"string",enum:["cyber","midnight","emerald"]}, primary:{type:"string"} }, required:["variant"] },
+    execute: async (i)=>{ const root=document.documentElement.style; const map={ cyber:["#020617","#22c55e"], midnight:["#0a0a0a","#3b82f6"], emerald:["#04140b","#10b981"] }; const [bg,ac]=i.primary?["#020617",i.primary]:map[i.variant]; root.setProperty("--background",bg); root.setProperty("--accent",ac); log(`[theme] ${i.variant}`); return { success:true }; } });
 
-  /* Tool 9 — snapshot */
-  mc.registerTool({
-    name: "snapshot",
-    description: "Export the complete canvas state plus a reasoning trace for judging transparency.",
-    inputSchema: { type: "object", properties: {} },
-    execute: async () => {
-      loadState();
-      const snap = {
-        timestamp: new Date().toISOString(),
-        companies: state.companies,
-        notes: state.notes,
-        ratios: state.ratios,
-        anomalies: state.anomalies,
-        identities: state.identities,
-        reasoningTrace: state.notes.map((n) => ({
-          noteId: n.id,
-          text: n.text,
-          owner: n.owner,
-          creator: n.creator,
-          createdAt: n.createdAt,
-        })),
-      };
-      log(`[tool:snapshot] exported ${state.notes.length} notes, ${state.ratios.length} ratios, ${state.anomalies.length} anomalies`);
-      return { success: true, snapshot: JSON.stringify(snap, null, 2) };
-    }
-  });
+  mc.registerTool({ name:"restyle_component", description:"Restyle a DOM element live by CSS selector.",
+    inputSchema:{ type:"object", properties:{ selector:{type:"string"}, styles:{type:"object"} }, required:["selector","styles"] },
+    execute: async (i)=>{ const el=document.querySelector(i.selector); if(!el) return {success:false,error:"not found"}; Object.entries(i.styles).forEach(([k,v])=>el.style.setProperty(k.startsWith("--")?k:k.replace(/([A-Z])/g,"-$1").toLowerCase(),v)); log(`[restyle] ${i.selector}`); return { success:true }; } });
 
-  /* Tool 10 — list_tools */
-  mc.registerTool({
-    name: "list_tools",
-    description: "Discover all tools currently registered on this WebMCP page.",
-    inputSchema: { type: "object", properties: {} },
-    execute: async () => ({
-      tools: [
-        { name: "create_company_profile", description: "Add a company to the canvas" },
-        { name: "fetch_financials", description: "Pull financial data for a ticker" },
-        { name: "add_note", description: "Place an insight/analysis note" },
-        { name: "add_data_point", description: "Plot a financial metric" },
-        { name: "calculate_ratio", description: "Compute P/E, ROE, Debt/Equity, etc." },
-        { name: "highlight_anomaly", description: "Flag a suspicious line item" },
-        { name: "generate_hypothesis", description: "Agent proposes an investment thesis" },
-        { name: "list_companies", description: "List all companies on canvas" },
-        { name: "snapshot", description: "Export memo + reasoning trace" },
-        { name: "list_tools", description: "Discover all available tools" },
-      ]
-    })
-  });
+  mc.registerTool({ name:"list_companies", description:"List companies on canvas.",
+    inputSchema:{ type:"object", properties:{} }, execute: async ()=>{ load(); return { companies: state.companies.map(c=>({ticker:c.ticker,name:c.name,sector:c.sector})) }; } });
 
-  /* ===== WebMCP Resources ===== */
-  mc.registerResource({
-    uriTemplate: "resource://fincanvas/state",
-    description: "Full canvas state: companies, notes, ratios, anomalies, identities.",
-    read: async () => {
-      loadState();
-      return { contents: [{ uri: "resource://fincanvas/state", text: JSON.stringify(state, null, 2), mimeType: "application/json" }] };
-    }
-  });
+  mc.registerTool({ name:"snapshot", description:"Export canvas state + reasoning trace.",
+    inputSchema:{ type:"object", properties:{} }, execute: async ()=>{ load(); const snap={ timestamp:new Date().toISOString(), companies:state.companies, notes:state.notes, ratios:state.ratios, anomalies:state.anomalies, identities:state.identities }; log(`[snapshot] ${state.notes.length} notes`); return { success:true, snapshot:JSON.stringify(snap,null,2) }; } });
 
-  mc.registerResource({
-    uriTemplate: "resource://fincanvas/company/{ticker}",
-    description: "Single company's financials + notes + ratios.",
-    read: async (params) => {
-      loadState();
-      const c = state.companies.find((c) => c.ticker === params.ticker);
-      if (!c) return { contents: [] };
-      return { contents: [{ uri: `resource://fincanvas/company/${params.ticker}`, text: JSON.stringify(c, null, 2), mimeType: "application/json" }] };
-    }
-  });
+  mc.registerTool({ name:"list_tools", description:"Discover all tools on this page.",
+    inputSchema:{ type:"object", properties:{} }, execute: async ()=>({ tools:["create_company_profile","fetch_financials","add_note","add_data_point","calculate_ratio","highlight_anomaly","generate_hypothesis","apply_theme","restyle_component","list_companies","snapshot","list_tools"] }) });
 
-  mc.registerResource({
-    uriTemplate: "resource://fincanvas/ratios",
-    description: "All computed financial ratios.",
-    read: async () => {
-      loadState();
-      return { contents: [{ uri: "resource://fincanvas/ratios", text: JSON.stringify(state.ratios, null, 2), mimeType: "application/json" }] };
-    }
-  });
+  mc.registerResource({ uriTemplate:"resource://fincanvas/state", description:"Full canvas state.", read: async ()=>{ load(); return { contents:[{ uri:"resource://fincanvas/state", text:JSON.stringify(state,null,2), mimeType:"application/json" }] }; } });
+  mc.registerResource({ uriTemplate:"resource://fincanvas/company/{ticker}", description:"Single company financials.", read: async (p)=>{ load(); const c=state.companies.find(c=>c.ticker===p.ticker); return c?{ contents:[{ uri:`resource://fincanvas/company/${p.ticker}`, text:JSON.stringify(c,null,2), mimeType:"application/json" }] }:{ contents:[] }; } });
+  mc.registerResource({ uriTemplate:"resource://fincanvas/ratios", description:"Computed ratios.", read: async ()=>{ load(); return { contents:[{ uri:"resource://fincanvas/ratios", text:JSON.stringify(state.ratios,null,2), mimeType:"application/json" }] }; } });
 
-  log("WebMCP tools registered: create_company_profile, fetch_financials, add_note, add_data_point, calculate_ratio, highlight_anomaly, generate_hypothesis, list_companies, snapshot, list_tools");
-  log("WebMCP resources: resource://fincanvas/state, /company/{ticker}, /ratios");
+  log("WebMCP ready: 12 tools + 3 resources");
 } else {
-  log("WebMCP modelContext not detected — running in standard browser mode (canvas still works).");
+  log("WebMCP not detected — canvas works in standard mode.");
 }
 
-/* ===== Human controls ===== */
-function initHumanControls() {
-  // Seed with a default company so first-time visitors see something
-  loadState();
-  if (state.companies.length === 0) {
-    ensureIdentity("human", "user");
-    state.companies.push({ ticker: "AAPL", name: "Apple Inc.", sector: "Technology", financials: MOCK_FINANCIALS.AAPL, notes: [] });
-    saveState();
-  }
-
-  document.getElementById("canvas").addEventListener("click", (e) => {
-    const pt = document.getElementById("canvas").createSVGPoint();
-    pt.x = e.clientX; pt.y = e.clientY;
-    const ctm = document.getElementById("canvas").getScreenCTM();
-    const svgP = pt.matrixTransform(ctm.inverse());
-
-    if (window.document.modelContext) {
-      window.document.modelContext.callTool("add_note", {
-        text: "❓ Question",
-        x: Math.round(svgP.x), y: Math.round(svgP.y),
-        owner: "human", creator: "human", role: "user"
-      }).then(() => { loadState(); render(); })
-        .catch(() => {
-          loadState();
-          const id = ensureIdentity("human", "user");
-          state.notes.push({ id: String(state.nextId++), text: "❓ Question", x: Math.round(svgP.x), y: Math.round(svgP.y), owner: "human", creator: id, createdAt: new Date().toISOString() });
-          saveState(); render();
-        });
-    } else {
-      loadState();
-      const id = ensureIdentity("human", "user");
-      state.notes.push({ id: String(state.nextId++), text: "❓ Question", x: Math.round(svgP.x), y: Math.round(svgP.y), owner: "human", creator: id, createdAt: new Date().toISOString() });
-      saveState(); render();
-    }
+/* ---- human ---- */
+function initHuman() {
+  load();
+  if (state.companies.length===0){ ensureId("human","user"); state.companies.push({ ticker:"AAPL", name:"Apple Inc.", sector:"Technology", financials:MOCK.AAPL, notes:[] }); save(); }
+  document.getElementById("canvas").addEventListener("click",(e)=>{
+    const pt=document.getElementById("canvas").createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY; const m=document.getElementById("canvas").getScreenCTM(); const s=pt.matrixTransform(m.inverse());
+    if (window.document.modelContext){ window.document.modelContext.callTool("add_note",{ text:"❓ Question", x:Math.round(s.x), y:Math.round(s.y), owner:"human", creator:"human", role:"user" }).then(()=>{ load(); render(); }).catch(()=>{ const id=ensureId("human","user"); state.notes.push({id:String(state.nextId++),text:"❓ Question",x:Math.round(s.x),y:Math.round(s.y),owner:"human",creator:id,createdAt:new Date().toISOString()}); save(); render(); }); }
+    else { const id=ensureId("human","user"); state.notes.push({id:String(state.nextId++),text:"❓ Question",x:Math.round(s.x),y:Math.round(s.y),owner:"human",creator:id,createdAt:new Date().toISOString()}); save(); render(); }
   });
 }
-
-/* ===== Boot ===== */
-loadState();
-render();
-listToolsUI();
-initHumanControls();
-log("FinCanvas ready. Click the canvas to place a note. An AI agent can join via WebMCP.");
+load(); render(); listToolsUI(); initHuman();
+log("FinCanvas ready. Click canvas to add a note. An AI agent can join via WebMCP.");
