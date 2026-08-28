@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CollabCanvas — WebMCP Human + Agent Co-Creation</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>CollabCanvas</h1>
+    <span class="tagline">A WebMCP-powered shared canvas for humans &amp; AI agents</span>
+  </header>
+
+  <main>
+    <section class="canvas-area">
+      <svg id="canvas" width="900" height="560" xmlns="http://www.w3.org/2000/svg"></svg>
+    </section>
+
+    <aside class="sidebar">
+      <h2>Agents &amp; Tools</h2>
+      <p>WebMCP exposes the below tools. An AI agent can call them directly on this page.</p>
+      <ul id="tool-list"></ul>
+
+      <h3>Console</h3>
+      <pre id="log"></pre>
+    </aside>
+  </main>
+
+  <footer>
+    <small>WebMCP hackathon project · MIT licensed · <a href="https://github.com/zawarudo-coder/webmcp-hackathon">GitHub</a></small>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

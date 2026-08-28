@@ -1,0 +1,82 @@
+html, body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #0d0f12;
+  color: #e6e6e6;
+  height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+}
+
+header {
+  padding: 14px 20px;
+  background: #14171c;
+  border-bottom: 1px solid #24282f;
+}
+
+header h1 { margin: 0; font-size: 20px; }
+.tagline { color: #9da3ad; font-size: 13px; }
+
+main {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: 1px;
+  background: #1a1e23;
+}
+
+canvas-area {
+  padding: 24px;
+}
+
+#canvas {
+  background: #fff;
+  border-radius: 8px;
+  cursor: crosshair;
+  display: block;
+}
+
+.note-h { fill: #fff; stroke: #2563eb; stroke-width: 2; }
+.note-a { fill: #f0fdfa; stroke: #0d9488; stroke-width: 2; }
+.agent-card { fill: #0f172a; stroke: #fbbf24; stroke-width: 1; }
+
+svg text { font-size: 12px; fill: #111; }
+
+.sidebar {
+  padding: 20px;
+  background: #14171c;
+  border-left: 1px solid #24282f;
+  overflow-y: auto;
+}
+
+.sidebar h2 { font-size: 16px; margin: 0 0 8px; }
+.sidebar h3 { font-size: 13px; margin: 18px 0 8px; color: #9da3ad; }
+
+#tool-list { list-style: none; padding-left: 0; }
+#tool-list li {
+  font-size: 12.5px;
+  padding: 4px 0;
+  border-bottom: 1px dashed #24282f;
+  word-break: break-word;
+}
+
+#log {
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: #a3e635;
+  background: #0d1014;
+  padding: 10px;
+  border-radius: 6px;
+  height: 180px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+
+footer {
+  padding: 10px 20px;
+  border-top: 1px solid #24282f;
+  background: #14171c;
+  text-align: center;
+}
+
+footer small { color: #6b7280; font-size: 12px; }
+footer a { color: #60a5fa; }
